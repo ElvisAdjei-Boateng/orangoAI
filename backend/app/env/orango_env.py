@@ -1,111 +1,89 @@
+from __future__ import annotations
+
 import gymnasium as gym
-from gymnasium import spaces
 import numpy as np
+from gymnasium import spaces
+
+from app.simulator.user_simulator import UserSimulator, create_user_profile
+
 
 class OrangoEnv(gym.Env):
-    def __init__(self):
+    """Environment for a conversational AI advisor that helps a user progress."""
+
+    metadata = {"render_modes": []}
+
+    def __init__(self, user_type: str = "neutral"):
         super().__init__()
+        self.user_type = user_type
+        self.user_profile = create_user_profile(user_type)
+        self.simulator = UserSimulator(profile=self.user_profile)
 
-        #continuous variable states( 0 to 1)
-
-        self.observation_space= spaces.Box(
-          low = 0.0,
-          high=1.0,
-          shape =(7,),
-          dtype=np.float32
-
+        self.observation_space = spaces.Box(
+            low=0.0,
+            high=1.0,
+            shape=(7,),
+            dtype=np.float32,
         )
 
-        #6 advice strategies
-        #Ask, inform, plan, small action, Reflect, Summarize
-        self.action_space = spaces. Discrete(6)
-
-
-        self.max_steps=10
-        self.current_step =0
-        self.state =None
-        # self.user = None
+        # 0 Ask, 1 Inform, 2 Plan, 3 Small action, 4 Reflect, 5 Summarize
+        self.action_space = spaces.Discrete(6)
+        self.max_steps = 10
+        self.current_step = 0
+        self.state = np.zeros(7, dtype=np.float32)
 
     def reset(self, seed=None, options=None):
-        super().reset(seed= seed)
-        self.current_step=0
+        super().reset(seed=seed)
+        self.current_step = 0
 
-        self.state=self.np_random.uniform(
-          low=0.0,
-          high=1.0,
-          size=7
-        ).astype(np.float32)
-
-        return self.state , {}
+        base = self.np_random.uniform(low=0.15, high=0.85, size=7).astype(np.float32)
+        base[3] = np.clip(base[3] + 0.25, 0.0, 1.0)
+        base[6] = 0.1
+        self.state = base
+        return self.state.copy(), {"user_type": self.user_type}
 
     def step(self, action):
-        self.current_step +=1
+        if not self.action_space.contains(int(action)):
+            raise ValueError(f"Unsupported action {action}")
+
         old_state = self.state.copy()
+        self.current_step += 1
+        self.state = self.simulator.step(self.state, int(action))
 
-        #Temporary transition logic
-        #We'll replace this with our user simulator
-        self.applyAction(action)
+        reward = self.calculate_reward(old_state, self.state, int(action))
+        terminated = self.state[6] >= 0.9
+        truncated = self.current_step >= self.max_steps
+        info = {
+            "step": self.current_step,
+            "action": int(action),
+            "user_type": self.user_type,
+        }
 
-        reward = self.calculateReward(
-          old_state,
-          self.state,
-          action
+        return self.state.copy(), float(reward), terminated, truncated, info
 
-        )
-        terminated = False
-        truncated = self.current_step >=self.max_steps
+    def calculate_reward(self, old_state, new_state, action):
+        goal_progress_change = new_state[6] - old_state[6]
+        clarity_change = new_state[1] - old_state[1]
+        stress_change = old_state[3] - new_state[3]
+        engagement_change = new_state[5] - old_state[5]
 
-        info={"step":self.current_step, "action":action}
-
-        return (
-            self.state, 
-            reward, 
-            terminated, 
-            truncated, 
-            info
-            )
-
-    def applyAction(self,action):
-        #Placeholder for transition logic
-        #Until we build the user simulator
-
-        if action ==0:  #Aask
-          self.state[1] +=0.05
-
-        elif action ==1: #Inform
-          self.state[1]+=0.03
-
-        elif action == 2 : #Plan
-          self.state[2]+=0.08
-          self.state[6]+=0.05
-
-        elif action == 3: #Small action
-          self.state[6]+=0.07
-          self.state[5]+=0.03
-        
-        elif action == 4: #Reflect
-          self.state[3]-=0.03
-          self.state[2]+=0.04
-
-        elif action == 5: #Summarize
-          self.state[1]+=0.04
-        
-        self.state = np.clip(
-          self.state,
-          0.0,
-          1.0
+        reward = (
+            1.6 * goal_progress_change
+            + 1.0 * clarity_change
+            + 0.8 * engagement_change
+            + 1.2 * stress_change
         )
 
-    def calculateReward(self, old_state, new_state, action):
-        goal_progress_change = (new_state[6]-old_state[6])
-        clarity_change = (new_state[1]-old_state[1])
-        stress_change = (old_state[3]- new_state[3])
+        # Small shaping terms encourage conversational pacing without making
+        # any single action optimal in every user state.
+        if action in (0, 1, 4, 5):
+            reward += 0.03
+        if action in (2, 3):
+            reward += 0.05
+        if new_state[3] > 0.85:
+            reward -= 0.15
+        if new_state[6] >= 0.9:
+            reward += 1.0
+        return float(np.clip(reward, -2.0, 3.0))
 
-        reward = (0.5*goal_progress_change + 0.3*clarity_change + 0.2*stress_change)
-       
-        return float(reward)
-
-
-
-
-
+    def render(self):
+        return self.state.copy()

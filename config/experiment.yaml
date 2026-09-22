@@ -1,0 +1,8 @@
+episodes: 500
+user_type: neutral
+seed: 7
+hidden_dim: 64
+learning_rate: 0.001
+discount: 0.95
+epsilon_decay: 0.995
+output_dir: artifacts
