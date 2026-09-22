@@ -1,159 +1,110 @@
-# from dataclasses import dataclass
+from __future__ import annotations
 
-# import numpy as np
+from dataclasses import dataclass
 
-# @dataclass
-# class UserProfile:
-#     """Hidden characteristics of a simulated user
-#     The RL agent does NOT directly observe these values 
-# """
-# receptiveness:float
-# follow_through:float
-# learning_rate:float
-# stress_sensitivity:float
-
-# class UserSimulator:
-# """Simulated how user react to different advice strategies"""
-
-# def __init__(self, profile:UserProfile):
-
-# def respond(self,state,action, rng):
-# """"Given the current observable state and the chosen action, produce the user's next state"""
-
-#     next_state = state.copy()
-#     (
-#       severity,clarity, goal_clarity, stress, motivation, engagement, goal_progress
-#     ) = next_state
-
-#     #Randomness represents the fact that users dont react identically every time
-
-#     noise = rng.normal(0, 0.015)
-
-#     if action==0: #Action 0
-#       clarity_change =(0.08*self.profile.learning_rate*self.profile.receptiveness)
-#       next_state[1] += clarity_change
-
-#       #Asking good questions can slightly increase engagement
-
-#       next_state[5] +=(0.03*self.profile.receptiveness)
-
-#     elif action==1:
-#       clarity_change=(0.06* self.profile.learning_rate*self.profile.receptiveness)
-
-#       next_state[1] += clarity_change
-#       #Information can reduce uncertainty but isnt necessarily enough to create action
-
-#       next_state[3]-=(0.02*self.profile.learning_rate)
-
-      
-#     elif action == 2:
-
-#       goal_change = (
-#                  0.10
-#                 * self.profile.follow_through
-#                 * self.profile.receptiveness
-#             )
-
-#       next_state[6] += goal_change
-#       next_state[2] += (
-#                 0.06 * self.profile.receptiveness
-#             )
-
-#       next_state[5] += (
-#                 0.03 * self.profile.receptiveness
-#             )
+import numpy as np
 
 
-#     elif action == 3:
+@dataclass(frozen=True)
+class UserProfile:
+    """Hidden characteristics of a simulated user."""
 
-#       goal_change = (
-#                 0.08
-#                 * self.profile.follow_through
-#             )
-
-#       next_state[6] += goal_change
-
-#       next_state[5] += (
-#                 0.05 * self.profile.receptiveness
-#             )
-
-#       next_state[3] -= (
-#                 0.03 * self.profile.follow_through
-#             )
+    receptiveness: float
+    follow_through: float
+    learning_rate: float
+    stress_sensitivity: float
 
 
-#     elif action == 4:
+class UserSimulator:
+    """Simulate how a user reacts to different advisor actions."""
 
-#             next_state[1] += (
-#                 0.05 * self.profile.learning_rate
-#             )
+    def __init__(self, profile: UserProfile | None = None, rng: np.random.Generator | None = None):
+        self.profile = profile or UserProfile(
+            receptiveness=0.6,
+            follow_through=0.6,
+            learning_rate=0.6,
+            stress_sensitivity=0.5,
+        )
+        self.rng = rng or np.random.default_rng()
 
-#             next_state[3] -= (
-#                 0.05
-#                 * self.profile.stress_sensitivity
-#             )
+    def step(self, state: np.ndarray, action: int) -> np.ndarray:
+        """Apply one advisor action to the user state and return the next state."""
+        if action not in range(6):
+            raise ValueError(f"Unsupported action {action}; expected 0..5")
 
-#             next_state[2] += (
-#                 0.04 * self.profile.receptiveness
-#             )
+        next_state = state.copy().astype(np.float32)
+        noise = self.rng.normal(0.0, 0.015, size=7)
 
-#     elif action == 5:
+        severity, clarity, goal_clarity, stress, motivation, engagement, progress = next_state
 
-#             next_state[1] += (
-#                 0.04 * self.profile.learning_rate
-#             )
+        if action == 0:  # Ask
+            clarity += 0.08 * self.profile.learning_rate * self.profile.receptiveness
+            engagement += 0.03 * self.profile.receptiveness
+            motivation += 0.01
+        elif action == 1:  # Inform
+            clarity += 0.06 * self.profile.learning_rate * self.profile.receptiveness
+            stress -= 0.02 * self.profile.learning_rate
+            goal_clarity += 0.02
+        elif action == 2:  # Plan
+            progress += 0.10 * self.profile.follow_through * self.profile.receptiveness
+            goal_clarity += 0.06 * self.profile.receptiveness
+            engagement += 0.03 * self.profile.receptiveness
+            motivation += 0.02
+        elif action == 3:  # Small action
+            progress += 0.08 * self.profile.follow_through
+            engagement += 0.05 * self.profile.receptiveness
+            stress -= 0.03 * self.profile.follow_through
+            motivation += 0.03
+        elif action == 4:  # Reflect
+            clarity += 0.05 * self.profile.learning_rate
+            stress -= 0.05 * self.profile.stress_sensitivity
+            goal_clarity += 0.04 * self.profile.receptiveness
+            motivation += 0.02
+        elif action == 5:  # Summarize
+            clarity += 0.04 * self.profile.learning_rate
+            engagement += 0.02 * self.profile.receptiveness
+            motivation += 0.03
 
-#             next_state[5] += (
-#                 0.02 * self.profile.receptiveness
-#             )
+        next_state = np.array(
+            [
+                severity,
+                clarity,
+                goal_clarity,
+                stress,
+                motivation,
+                engagement,
+                progress,
+            ],
+            dtype=np.float32,
+        )
+        next_state += noise
+        next_state = np.clip(next_state, 0.0, 1.0)
+        return next_state
 
-#         # -----------------------------------------
-#         # Add stochastic variation
-#         # -----------------------------------------
 
-#             next_state += noise
+def create_user_profile(user_type: str, rng: np.random.Generator | None = None) -> UserProfile:
+    rng = rng or np.random.default_rng()
 
-#         # Keep every state variable inside [0, 1]
-#             next_state = np.clip(
-#             next_state,
-#             0.0,
-#             1.0
-#             )
+    if user_type == "motivated":
+        return UserProfile(
+            receptiveness=0.85,
+            follow_through=0.85,
+            learning_rate=0.80,
+            stress_sensitivity=0.60,
+        )
+    if user_type == "neutral":
+        return UserProfile(
+            receptiveness=0.55,
+            follow_through=0.50,
+            learning_rate=0.50,
+            stress_sensitivity=0.50,
+        )
+    if user_type == "resistant":
+        return UserProfile(
+            receptiveness=0.30,
+            follow_through=0.25,
+            learning_rate=0.30,
+            stress_sensitivity=0.30,
+        )
 
-#             return next_state
-
-      
-# #Create user profile
-
-# def create_user_profile(user_type, rng):
-
-#     if user_type == "motivated":
-
-#         return UserProfile(
-#             receptiveness=0.85,
-#             follow_through=0.85,
-#             learning_rate=0.80,
-#             stress_sensitivity=0.60,
-#         )
-
-#     if user_type == "neutral":
-
-#         return UserProfile(
-#             receptiveness=0.55,
-#             follow_through=0.50,
-#             learning_rate=0.50,
-#             stress_sensitivity=0.50,
-#         )
-
-#     if user_type == "resistant":
-
-#         return UserProfile(
-#             receptiveness=0.30,
-#             follow_through=0.25,
-#             learning_rate=0.30,
-#             stress_sensitivity=0.30,
-#         )
-
-#     raise ValueError(
-#         f"Unknown user type: {user_type}"
-#     )
+    raise ValueError(f"Unknown user type: {user_type}")
