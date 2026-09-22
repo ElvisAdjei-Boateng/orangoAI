@@ -1,0 +1,6 @@
+numpy
+gymnasium
+pyyaml
+fastapi
+uvicorn
+pytest

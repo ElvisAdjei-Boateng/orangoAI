@@ -73,10 +73,16 @@ class OrangoEnv(gym.Env):
             + 1.2 * stress_change
         )
 
+        # Small shaping terms encourage conversational pacing without making
+        # any single action optimal in every user state.
         if action in (0, 1, 4, 5):
-            reward += 0.05
+            reward += 0.03
         if action in (2, 3):
-            reward += 0.08
+            reward += 0.05
+        if new_state[3] > 0.85:
+            reward -= 0.15
+        if new_state[6] >= 0.9:
+            reward += 1.0
         return float(np.clip(reward, -2.0, 3.0))
 
     def render(self):

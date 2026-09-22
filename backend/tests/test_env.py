@@ -2,6 +2,8 @@
 
 from app.env.orango_env import OrangoEnv
 from app.simulator.user_simulator import UserSimulator, create_user_profile
+from app.agents.dqn import DQNAdvisor
+from app.llm.responses import template_response
 
 
 def test_environment_reset_and_action_space():
@@ -48,3 +50,19 @@ def test_q_learning_agent_can_train():
 
     assert len(scores) == 30
     assert np.mean(scores) > -1.0
+
+
+def test_dqn_can_select_actions_and_train():
+    env = OrangoEnv(user_type="neutral")
+    advisor = DQNAdvisor(batch_size=4, hidden_dim=16, seed=3)
+    history = advisor.train(env, episodes=8)
+
+    assert len(history) == 8
+    assert all(0 <= advisor.choose_action(env.reset(seed=9)[0], explore=False) < 6 for _ in range(3))
+    assert history[-1]["epsilon"] < 1.0
+
+
+def test_template_response_maps_action_to_text():
+    response = template_response(2, [0.4, 0.5, 0.4, 0.6, 0.5, 0.5, 0.1])
+
+    assert "plan" in response.lower()
